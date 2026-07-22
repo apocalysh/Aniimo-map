@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aniimo Custom Map</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; background-color: #1a1a1a; font-family: sans-serif; }
+        #map { width: 100vw; height: 100vh; }
+        .leaflet-container { background: #1a1a1a; }
+        
+        #auth-bar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(30, 30, 30, 0.9);
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            font-size: 13px;
+        }
+        #auth-bar label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+        }
+        #role-select, #filter-select {
+            background: #2a2a2a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        #search-input {
+            background: #2a2a2a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 13px;
+            width: 120px;
+        }
+        #search-input::placeholder {
+            color: #888;
+        }
+
+        .marker-icon-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        .marker-icon-wrapper img.base-icon {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .suggested-lightbulb {
+            position: absolute;
+            top: -12px;
+            left: calc(50% + 10px);
+            font-size: 14px;
+            filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+            z-index: 10;
+        }
+
+        .custom-popup-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 5px;
+        }
+        
+        .leaflet-popup-content {
+            width: 250px !important;
+        }
+
+        .coords-row {
+            display: flex;
+            gap: 4px;
+        }
+        .coord-input-group {
+            display: flex;
+            flex-direction: column;
+            width: 50%;
+        }
+        .coord-input-group label {
+            font-size: 10px;
+            color: #555;
+            margin-bottom: 2px;
+            font-weight: bold;
+        }
+        .marker-input {
+            width: 100%;
+            padding: 4px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .file-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .file-input-group label {
+            font-size: 10px;
+            color: #555;
+            font-weight: bold;
+        }
+        .file-input-group input[type="file"] {
+            font-size: 11px;
+            color: #333;
+        }
+        .popup-preview-img {
+            max-width: 100%;
+            max-height: 120px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-top: 4px;
+            cursor: pointer;
+            transition: opacity 0.15s ease;
+            display: block;
+        }
+        .popup-preview-img:hover {
+            opacity: 0.85;
+        }
+
+        #image-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.85);
+            align-items: center;
+            justify-content: center;
+            cursor: zoom-out;
+        }
+        #image-modal img {
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: 6px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            object-fit: contain;
+        }
+
+        .icon-selector-grid {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .icon-option-btn {
+            background: #f8f8f8;
+            border: 2px solid #ccc;
+            border-radius: 6px;
+            width: 36px;
+            height: 36px;
+            padding: 2px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .icon-option-btn img {
+            width: 20px;
+            height: 32px;
+            object-fit: contain;
+        }
+        .icon-option-btn.square-icon img {
+            width: 24px;
+            height: 24px;
+        }
+        .icon-option-btn:hover {
+            border-color: #999;
+            background: #eee;
+        }
+        .icon-option-btn.selected {
+            border-color: #ff00ff;
+            background-color: #ffe6ff;
+            box-shadow: 0 0 5px rgba(255, 0, 255, 0.6);
+        }
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .save-btn:hover {
+            background-color: #45a049;
+        }
+        .cancel-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-left: 6px;
+        }
+        .cancel-btn:hover {
+            background-color: #c0392b;
+        }
+        .edit-btn {
+            background-color: #87aeee;
+            color: #333;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            vertical-align: middle;
+            margin-left: 6px;
+        }
+        .edit-btn:hover {
+            background-color: #6f9be2;
+        }
+        .approve-btn {
+            background-color: #ffaa00;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 2px 6px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+        .approve-btn:hover {
+            background-color: #e69500;
+        }
+    </style>
+</head>
+<body>
+
+<div id="auth-bar">
+    <input type="text" id="search-input" placeholder="Search title..." />
+    <label for="filter-select">Filter:</label>
+    <select id="filter-select">
+        <option value="All">All</option>
+        <option value="Jamie">Jamie</option>
+        <option value="Liam">Liam</option>
+        <option value="Sabina">Sabina</option>
+    </select>
+    <label for="role-select">Role:</label>
+    <select id="role-select">
+        <option value="Sabina">Sabina (Owner)</option>
+        <option value="Liam">Liam (User)</option>
+        <option value="Jamie">Jamie (User)</option>
+    </select>
+</div>
+
+<div id="image-modal">
+    <img id="modal-img-content" src="" alt="Fullscreen Preview" />
+</div>
+
+<div id="map"></div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyD7_wWMfQpPRzR2IVzwktlOu0MCOMh4ywM",
+        authDomain: "aniimo-map-73cfa.firebaseapp.com",
+        databaseURL: "https://aniimo-map-73cfa-default-rtdb.firebaseio.com",
+        projectId: "aniimo-map-73cfa",
+        storageBucket: "aniimo-map-73cfa.firebasestorage.app",
+        messagingSenderId: "209867026361",
+        appId: "1:209867026361:web:4cf44b5910aebf31179068"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const markersRef = database.ref('markers');
+
+    const imageModal = document.getElementById('image-modal');
+    const modalImgContent = document.getElementById('modal-img-content');
+
+    imageModal.onclick = function() {
+        imageModal.style.display = 'none';
+        modalImgContent.src = '';
+    };
+
+    function openLightbox(imgSrc) {
+        modalImgContent.src = imgSrc;
+        imageModal.style.display = 'flex';
+    }
+
+    const roleSelect = document.getElementById('role-select');
+    
+    const profiles = {
+        "Sabina": "user_sabina_owner",
+        "Liam": "user_liam_suggest",
+        "Jamie": "user_jamie_suggest"
+    };
+
+    let currentRole = localStorage.getItem('aniimo_role') || "Sabina";
+    if (!profiles[currentRole]) {
+        currentRole = "Sabina";
+    }
+    roleSelect.value = currentRole;
+
+    let currentUserId = profiles[currentRole];
+    let isOwner = (currentRole === "Sabina");
+
+    roleSelect.onchange = function() {
+        currentRole = this.value;
+        localStorage.setItem('aniimo_role', currentRole);
+        location.reload(); 
+    };
+
+    const filterSelect = document.getElementById('filter-select');
+    let currentFilter = "All";
+
+    const searchInput = document.getElementById('search-input');
+    let searchQuery = "";
+
+    const authorNameToId = {
+        "Sabina": "user_sabina_owner",
+        "Liam": "user_liam_suggest",
+        "Jamie": "user_jamie_suggest"
+    };
+
+    const availableIcons = {
+        "Violet Pin": {
+            url: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png",
+            shadow: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+            square: false
+        },
+        "Lumin Amber": {
+            url: "https://raw.githubusercontent.com/apocalysh/aniimo-map-icons/d594ba31cb7c6218785181ed0872bfc1883ae215/luminAmber.png",
+            shadow: null,
+            square: true
+        },
+        "Egg": {
+            url: "https://raw.githubusercontent.com/apocalysh/aniimo-map-icons/93568c5db92dad3cdec772eea326147904e226f9/egg.png",
+            shadow: null,
+            square: true
+        },
+        "Chest": {
+            url: "https://raw.githubusercontent.com/apocalysh/aniimo-map-icons/b4ab9de37f6ff536591c610bb33e2daff9cdf32e/chest.png",
+            shadow: null,
+            square: true
+        }
+    };
+
+    function createCustomIcon(iconKey, isSuggested, authorId) {
+        let iconData = availableIcons[iconKey] || availableIcons["Violet Pin"];
+        
+        let width = iconData.square ? 32 : 25;
+        let height = iconData.square ? 32 : 41;
+        let anchorX = iconData.square ? 16 : 12;
+        let anchorY = iconData.square ? 32 : 41;
+
+        let htmlString = `<div class="marker-icon-wrapper">
+            <img src="${iconData.url}" class="base-icon" style="width: ${width}px; height: ${height}px;" />`;
+        
+        if (isSuggested) {
+            let bulbStyle = "";
+            let bulbTitle = "Suggested Marker";
+            
+            if (authorId === profiles["Liam"]) {
+                bulbStyle = "filter: drop-shadow(0 0 2px rgba(0,0,0,0.8)) hue-rotate(240deg) saturate(300%);";
+                bulbTitle = "Suggested by Liam";
+            } else if (authorId === profiles["Jamie"]) {
+                bulbStyle = "filter: drop-shadow(0 0 2px rgba(0,0,0,0.8)) hue-rotate(75deg) saturate(300%);";
+                bulbTitle = "Suggested by Jamie";
+            }
+            
+            htmlString += `<span class="suggested-lightbulb" style="${bulbStyle}" title="${bulbTitle}">💡</span>`;
+        }
+        
+        htmlString += `</div>`;
+
+        return L.divIcon({
+            className: 'custom-composed-icon',
+            html: htmlString,
+            iconSize: [width, height],
+            iconAnchor: [anchorX, anchorY],
+            popupAnchor: [0, -anchorY]
+        });
+    }
+
+    function buildIconSelectorHtml(selectedKey) {
+        let html = '<div class="icon-selector-grid">';
+        for (let name in availableIcons) {
+            let isSelected = (name === selectedKey) ? 'selected' : '';
+            let iconObj = availableIcons[name];
+            let squareClass = iconObj.square ? 'square-icon' : '';
+            
+            let innerContent = `<img src="${iconObj.url}" title="${name}" />`;
+            html += `<button type="button" class="icon-option-btn ${squareClass} ${isSelected}" data-icon-key="${name}">${innerContent}</button>`;
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function attachIconSelectorEvents(container, callback) {
+        const buttons = container.querySelectorAll('.icon-option-btn');
+        buttons.forEach(btn => {
+            btn.onclick = function() {
+                buttons.forEach(b => b.classList.remove('selected'));
+                this.classList.add('selected');
+                if (callback) callback(this.getAttribute('data-icon-key'));
+            };
+        });
+    }
+
+    function handleImageUpload(fileInput, callback) {
+        const file = fileInput.files[0];
+        if (!file) {
+            callback(null);
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                const maxDim = 1200; 
+                if (width > height && width > maxDim) {
+                    height *= maxDim / width;
+                    width = maxDim;
+                } else if (height > maxDim) {
+                    width *= maxDim / height;
+                    height = maxDim;
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                callback(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    var mapImage = new Image();
+    mapImage.src = 'https://raw.githubusercontent.com/apocalysh/aniimo-map-icons/refs/heads/main/map.png';
+
+    mapImage.onload = function() {
+        var w = mapImage.naturalWidth;
+        var h = mapImage.naturalHeight;
+
+        var map = L.map('map', {
+            crs: L.CRS.Simple,
+            minZoom: -3,
+            maxZoom: 2
+        });
+
+        var bounds = [[0, 0], [h, w]];
+        L.imageOverlay(mapImage.src, bounds).addTo(map);
+        map.fitBounds(bounds);
+
+        var renderedMarkers = {};
+        var markerData = {};
+
+        filterSelect.onchange = function() {
+            currentFilter = this.value;
+            applyFilter();
+        };
+
+        searchInput.oninput = function() {
+            searchQuery = this.value.trim().toLowerCase();
+            applyFilter();
+        };
+
+        function applyFilter() {
+            for (let key in renderedMarkers) {
+                let data = markerData[key];
+                if (!data) continue;
+
+                let matchesFilter = currentFilter === "All" || data.authorId === authorNameToId[currentFilter];
+                let matchesSearch = searchQuery === "" || (data.label && data.label.toLowerCase().includes(searchQuery));
+
+                if (matchesFilter && matchesSearch) {
+                    map.addLayer(renderedMarkers[key]);
+                } else {
+                    map.removeLayer(renderedMarkers[key]);
+                }
+            }
+        }
+
+        function placeMarkerOnMap(key, mapY, mapX, gameX, gameY, label, iconType, authorId, isSuggested, imageData) {
+            var displayText = label || "Marker"; 
+            var chosenIcon = createCustomIcon(iconType, isSuggested, authorId);
+            
+            var marker = L.marker([mapY, mapX], { icon: chosenIcon }).addTo(map);
+            
+            var displayGameX = (gameX !== undefined && gameX !== null) ? gameX : mapX;
+            var displayGameY = (gameY !== undefined && gameY !== null) ? gameY : mapY;
+            
+            let canModify = isOwner || (authorId === currentUserId);
+
+            var popupDiv = document.createElement('div');
+            let popupHtml = `
+                <div class="info-view">
+                    <b><span class="title-text">${displayText}</span></b>
+            `;
+            if (canModify) {
+                popupHtml += `<button class="edit-btn" title="Edit Marker">✍🏻</button>`;
+            }
+            popupHtml += `
+                    <br>In-game X: ${displayGameX}<br>In-game Y: ${displayGameY}
+                    <br><small style="color: #888;">Type: ${isSuggested ? 'Suggested' : 'Official'}</small>
+            `;
+
+            if (imageData) {
+                popupHtml += `<br><img src="${imageData}" class="popup-preview-img" title="Click to view larger" data-full-img="${imageData}" />`;
+            }
+
+            if (isOwner && isSuggested) {
+                popupHtml += `<br><button class="approve-btn">Approve Marker</button>`;
+            }
+
+            popupHtml += `
+                    <br><i>(${canModify ? 'Right-click to delete' : 'Read-only view for others'})</i>
+                </div>
+            `;
+            popupDiv.innerHTML = popupHtml;
+
+            const previewImgEl = popupDiv.querySelector('.popup-preview-img');
+            if (previewImgEl) {
+                previewImgEl.onclick = function() {
+                    openLightbox(this.getAttribute('data-full-img'));
+                };
+            }
+            
+            var editBtn = popupDiv.querySelector('.edit-btn');
+            if (editBtn) {
+                editBtn.onclick = function() {
+                    let selectedIconKey = iconType || "Violet Pin";
+                    let currentImgData = imageData || null;
+
+                    popupDiv.innerHTML = `
+                        <b>Edit Marker</b>
+                        <div class="custom-popup-container">
+                            <input type="text" class="marker-input edit-input" value="${displayText}" />
+                            <div class="coords-row">
+                                <div class="coord-input-group">
+                                    <label>In-game X</label>
+                                    <input type="number" class="marker-input edit-x-input" value="${displayGameX}" />
+                                </div>
+                                <div class="coord-input-group">
+                                    <label>In-game Y</label>
+                                    <input type="number" class="marker-input edit-y-input" value="${displayGameY}" />
+                                </div>
+                            </div>
+                            <div class="file-input-group">
+                                <label>Upload / Change Image</label>
+                                <input type="file" accept="image/*" class="edit-file-input" />
+                            </div>
+                            ${buildIconSelectorHtml(selectedIconKey)}
+                            <div style="text-align: right; margin-top: 4px;">
+                                <button class="save-btn update-save-btn" style="margin-left: auto;">✓</button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    var inputField = popupDiv.querySelector('.edit-input');
+                    var xInput = popupDiv.querySelector('.edit-x-input');
+                    var yInput = popupDiv.querySelector('.edit-y-input');
+                    var fileInput = popupDiv.querySelector('.edit-file-input');
+                    var updateBtn = popupDiv.querySelector('.update-save-btn');
+                    
+                    attachIconSelectorEvents(popupDiv, (newKey) => {
+                        selectedIconKey = newKey;
+                    });
+
+                    updateBtn.onclick = function() {
+                        var newLabel = inputField.value.trim();
+                        if (newLabel === "") newLabel = "Marker";
+                        var newGameX = parseInt(xInput.value) || 0;
+                        var newGameY = parseInt(yInput.value) || 0;
+                        
+                        handleImageUpload(fileInput, function(newImgResult) {
+                            let finalImg = newImgResult !== null ? newImgResult : currentImgData;
+                            markersRef.child(key).update({ 
+                                label: newLabel, 
+                                gameX: newGameX, 
+                                gameY: newGameY, 
+                                icon: selectedIconKey,
+                                image: finalImg
+                            });
+                        });
+                    };
+                    
+                    setTimeout(() => {
+                        inputField.focus();
+                        inputField.select();
+                    }, 50);
+                };
+            }
+
+            var approveBtn = popupDiv.querySelector('.approve-btn');
+            if (approveBtn) {
+                approveBtn.onclick = function() {
+                    markersRef.child(key).update({ isSuggested: false });
+                };
+            }
+
+            marker.bindPopup(popupDiv);
+            
+            marker.on('contextmenu', function(e) {
+                if (canModify) {
+                    markersRef.child(key).remove();
+                }
+            });
+            
+            renderedMarkers[key] = marker;
+            markerData[key] = { authorId: authorId, label: displayText };
+
+            if (currentFilter !== "All" || searchQuery !== "") {
+                let filterAuthorId = authorNameToId[currentFilter];
+                let matchesFilter = currentFilter === "All" || authorId === filterAuthorId;
+                let matchesSearch = searchQuery === "" || displayText.toLowerCase().includes(searchQuery);
+                if (!matchesFilter || !matchesSearch) {
+                    map.removeLayer(marker);
+                }
+            }
+
+            return marker;
+        }
+
+        map.on('click', function(e) {
+            var clickedMapY = Math.round(e.latlng.lat);
+            var clickedMapX = Math.round(e.latlng.lng);
+            
+            var tempMarker = L.marker([clickedMapY, clickedMapX]).addTo(map);
+            let selectedIconKey = "Violet Pin";
+
+            let defaultSuggested = !isOwner;
+            let actionTitle = defaultSuggested ? "Suggest Marker" : "Add Marker";
+
+            var popupDiv = document.createElement('div');
+            popupDiv.innerHTML = `
+                <b>${actionTitle}</b>
+                <div class="custom-popup-container">
+                    <input type="text" class="marker-input name-input" value="New Marker" />
+                    <div class="coords-row">
+                        <div class="coord-input-group">
+                            <label>In-game X</label>
+                            <input type="number" class="marker-input x-input" value="${clickedMapX}" />
+                        </div>
+                        <div class="coord-input-group">
+                            <label>In-game Y</label>
+                            <input type="number" class="marker-input y-input" value="${clickedMapY}" />
+                        </div>
+                    </div>
+                    <div class="file-input-group">
+                        <label>Upload Picture (Optional)</label>
+                        <input type="file" accept="image/*" class="marker-file-input" />
+                    </div>
+                    ${buildIconSelectorHtml(selectedIconKey)}
+                    <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px;">
+                        <button class="save-btn">✓</button>
+                        <button class="cancel-btn">✕</button>
+                    </div>
+                </div>
+            `;
+            
+            var inputField = popupDiv.querySelector('.name-input');
+            var xInput = popupDiv.querySelector('.x-input');
+            var yInput = popupDiv.querySelector('.y-input');
+            var fileInput = popupDiv.querySelector('.marker-file-input');
+            var saveButton = popupDiv.querySelector('.save-btn');
+            var cancelButton = popupDiv.querySelector('.cancel-btn');
+
+            cancelButton.onclick = function() {
+                map.removeLayer(tempMarker);
+            };
+            
+            attachIconSelectorEvents(popupDiv, (newKey) => {
+                selectedIconKey = newKey;
+                if (newKey === "Lumin Amber") inputField.value = "Lumin Amber";
+                else if (newKey === "Egg") inputField.value = "Elite Egg";
+                else if (newKey === "Chest") inputField.value = "Chest";
+            });
+
+            saveButton.onclick = function() {
+                var finalLabel = inputField.value.trim();
+                if (finalLabel === "") finalLabel = "Marker";
+                var finalGameX = parseInt(xInput.value) || 0;
+                var finalGameY = parseInt(yInput.value) || 0;
+                
+                handleImageUpload(fileInput, function(imgDataBase64) {
+                    markersRef.push({ 
+                        y: clickedMapY, 
+                        x: clickedMapX, 
+                        gameX: finalGameX, 
+                        gameY: finalGameY, 
+                        label: finalLabel, 
+                        icon: selectedIconKey,
+                        authorId: currentUserId,
+                        isSuggested: defaultSuggested,
+                        image: imgDataBase64 || null
+                    });
+                    map.removeLayer(tempMarker);
+                });
+            };
+            
+            inputField.addEventListener('keypress', function(event) {
+                if (event.key === "Enter") {
+                    saveButton.click();
+                }
+            });
+
+            tempMarker.on('popupclose', function() {
+                if (map.hasLayer(tempMarker)) {
+                    map.removeLayer(tempMarker);
+                }
+            });
+
+            tempMarker.bindPopup(popupDiv).openPopup();
+            setTimeout(() => {
+                inputField.focus();
+                inputField.select();
+            }, 100);
+        });
+
+        markersRef.on('child_added', function(snapshot) {
+            var data = snapshot.val();
+            var key = snapshot.key;
+            placeMarkerOnMap(key, data.y, data.x, data.gameX, data.gameY, data.label, data.icon, data.authorId, data.isSuggested, data.image);
+        });
+
+        markersRef.on('child_changed', function(snapshot) {
+            var data = snapshot.val();
+            var key = snapshot.key;
+            if (renderedMarkers[key]) {
+                map.removeLayer(renderedMarkers[key]);
+            }
+            delete markerData[key];
+            placeMarkerOnMap(key, data.y, data.x, data.gameX, data.gameY, data.label, data.icon, data.authorId, data.isSuggested, data.image);
+        });
+
+        markersRef.on('child_removed', function(snapshot) {
+            var key = snapshot.key;
+            if (renderedMarkers[key]) {
+                map.removeLayer(renderedMarkers[key]);
+                delete renderedMarkers[key];
+                delete markerData[key];
+            }
+        });
+    };
+</script>
+
+</body>
+</html>
